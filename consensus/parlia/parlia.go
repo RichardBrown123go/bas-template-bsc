@@ -195,9 +195,10 @@ type Parlia struct {
 
 	lock sync.RWMutex // Protects the signer fields
 
-	ethAPI          *ethapi.PublicBlockChainAPI
-	validatorSetABI abi.ABI
-	slashABI        abi.ABI
+	ethAPI           *ethapi.PublicBlockChainAPI
+	validatorSetABI  abi.ABI
+	slashABI         abi.ABI
+	deployerProxyABI abi.ABI
 
 	// The fields below are for testing only
 	fakeDiff bool // Skip difficulty verifications
@@ -235,17 +236,19 @@ func New(
 	if err != nil {
 		panic(err)
 	}
+	dABI, err := abi.JSON(strings.NewReader())
 	c := &Parlia{
-		chainConfig:     chainConfig,
-		config:          parliaConfig,
-		genesisHash:     genesisHash,
-		db:              db,
-		ethAPI:          ethAPI,
-		recentSnaps:     recentSnaps,
-		signatures:      signatures,
-		validatorSetABI: vABI,
-		slashABI:        sABI,
-		signer:          types.NewEIP155Signer(chainConfig.ChainID),
+		chainConfig:      chainConfig,
+		config:           parliaConfig,
+		genesisHash:      genesisHash,
+		db:               db,
+		ethAPI:           ethAPI,
+		recentSnaps:      recentSnaps,
+		signatures:       signatures,
+		validatorSetABI:  vABI,
+		slashABI:         sABI,
+		deployerProxyABI: dABI,
+		signer:           types.NewEIP155Signer(chainConfig.ChainID),
 	}
 
 	return c
@@ -1237,6 +1240,100 @@ func (p *Parlia) applyTransaction(
 	*receipts = append(*receipts, receipt)
 	state.SetNonce(msg.From(), nonce+1)
 	return nil
+}
+
+// IsDeployerValid returns whether a deployer valid or not
+func (p *Parlia) IsDeployerValid(deployer common.Address, blockNr rpc.BlockNumberOrHash) (bool, error) {
+	// it should be done within short timeout context for not blocking mining
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	isDeployer, err := p.isDeployer(ctx, deployer, blockNr)
+	if err != nil {
+		return false, err
+	} else if !isDeployer {
+		return false, nil
+	}
+
+	// we use a same context here
+	return p.isDeployerBanned(ctx, deployer, blockNr)
+}
+
+func (p *Parlia) callContractMethod(
+	ctx context.Context,
+	contract common.Address,
+	blockNr rpc.BlockNumberOrHash,
+	abi *abi.ABI,
+	method string,
+	params ...interface{},
+) ([]byte, error) {
+	// pack
+	data, err := abi.Pack(method, params...)
+	if err != nil {
+		return nil, err
+	}
+
+	msgData := (hexutil.Bytes)(data)
+	gas := (hexutil.Uint64)(uint64(math.MaxUint64 / 2))
+
+	// call
+	return p.ethAPI.Call(ctx, ethapi.CallArgs{
+		Gas:  &gas,
+		To:   &contract,
+		Data: &msgData,
+	}, blockNr, nil)
+}
+
+func (p *Parlia) isDeployer(
+	ctx context.Context,
+	deployer common.Address,
+	blockNr rpc.BlockNumberOrHash,
+) (ret bool, err error) {
+	method := "isDeployer"
+
+	// call
+	data, err := p.callContractMethod(
+		ctx,
+		systemcontract.DeployerProxyContractAddress,
+		blockNr,
+		&p.deployerProxyABI,
+		method,
+		deployer,
+	)
+	if err != nil {
+		return
+	}
+
+	// unpack
+	err = p.deployerProxyABI.UnpackIntoInterface(&ret, method, data)
+
+	return
+}
+
+func (p *Parlia) isDeployerBanned(
+	ctx context.Context,
+	deployer common.Address,
+	blockNr rpc.BlockNumberOrHash,
+) (ret bool, err error) {
+	method := "isBanned"
+
+	// call
+	data, err := p.callContractMethod(
+		ctx,
+		systemcontract.DeployerProxyContractAddress,
+		blockNr,
+		&p.deployerProxyABI,
+		method,
+		deployer,
+	)
+	if err != nil {
+		return
+	}
+
+	// unpack
+	err = p.deployerProxyABI.UnpackIntoInterface(&ret, method, data)
+
+	return
 }
 
 // ===========================     utility function        ==========================

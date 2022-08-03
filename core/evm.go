@@ -113,5 +113,7 @@ func Transfer(db vm.StateDB, sender, recipient common.Address, amount *big.Int) 
 
 // CanCreateContract returns whether caller can create contract or not
 func CanCreateContract(db vm.StateDB, caller common.Address) bool {
+	// TODO: could we reuse the system contract snapshot for less query.
+	// getting the caller valid or not in system contract.
 	return true
 }

@@ -138,6 +138,11 @@ func TestCallTracerNative(t *testing.T) {
 	testCallTracer("callTracer", "call_tracer", t)
 }
 
+var (
+	// for testing
+	_canCreateContract = func(db vm.StateDB, caller common.Address) bool { return true }
+)
+
 func testCallTracer(tracerName string, dirPath string, t *testing.T) {
 	files, err := ioutil.ReadDir(filepath.Join("testdata", dirPath))
 	if err != nil {
@@ -173,13 +178,14 @@ func testCallTracer(tracerName string, dirPath string, t *testing.T) {
 					GasPrice: tx.GasPrice(),
 				}
 				context = vm.BlockContext{
-					CanTransfer: core.CanTransfer,
-					Transfer:    core.Transfer,
-					Coinbase:    test.Context.Miner,
-					BlockNumber: new(big.Int).SetUint64(uint64(test.Context.Number)),
-					Time:        new(big.Int).SetUint64(uint64(test.Context.Time)),
-					Difficulty:  (*big.Int)(test.Context.Difficulty),
-					GasLimit:    uint64(test.Context.GasLimit),
+					CanTransfer:       core.CanTransfer,
+					Transfer:          core.Transfer,
+					Coinbase:          test.Context.Miner,
+					BlockNumber:       new(big.Int).SetUint64(uint64(test.Context.Number)),
+					Time:              new(big.Int).SetUint64(uint64(test.Context.Time)),
+					Difficulty:        (*big.Int)(test.Context.Difficulty),
+					GasLimit:          uint64(test.Context.GasLimit),
+					CanCreateContract: _canCreateContract,
 				}
 				_, statedb = tests.MakePreState(rawdb.NewMemoryDatabase(), test.Genesis.Alloc, false)
 			)
@@ -284,13 +290,14 @@ func benchTracer(tracerName string, test *callTracerTest, b *testing.B) {
 		GasPrice: tx.GasPrice(),
 	}
 	context := vm.BlockContext{
-		CanTransfer: core.CanTransfer,
-		Transfer:    core.Transfer,
-		Coinbase:    test.Context.Miner,
-		BlockNumber: new(big.Int).SetUint64(uint64(test.Context.Number)),
-		Time:        new(big.Int).SetUint64(uint64(test.Context.Time)),
-		Difficulty:  (*big.Int)(test.Context.Difficulty),
-		GasLimit:    uint64(test.Context.GasLimit),
+		CanTransfer:       core.CanTransfer,
+		Transfer:          core.Transfer,
+		Coinbase:          test.Context.Miner,
+		BlockNumber:       new(big.Int).SetUint64(uint64(test.Context.Number)),
+		Time:              new(big.Int).SetUint64(uint64(test.Context.Time)),
+		Difficulty:        (*big.Int)(test.Context.Difficulty),
+		GasLimit:          uint64(test.Context.GasLimit),
+		CanCreateContract: _canCreateContract,
 	}
 	_, statedb := tests.MakePreState(rawdb.NewMemoryDatabase(), test.Genesis.Alloc, false)
 
@@ -338,13 +345,14 @@ func TestZeroValueToNotExitCall(t *testing.T) {
 		GasPrice: big.NewInt(1),
 	}
 	context := vm.BlockContext{
-		CanTransfer: core.CanTransfer,
-		Transfer:    core.Transfer,
-		Coinbase:    common.Address{},
-		BlockNumber: new(big.Int).SetUint64(8000000),
-		Time:        new(big.Int).SetUint64(5),
-		Difficulty:  big.NewInt(0x30000),
-		GasLimit:    uint64(6000000),
+		CanTransfer:       core.CanTransfer,
+		Transfer:          core.Transfer,
+		Coinbase:          common.Address{},
+		BlockNumber:       new(big.Int).SetUint64(8000000),
+		Time:              new(big.Int).SetUint64(5),
+		Difficulty:        big.NewInt(0x30000),
+		GasLimit:          uint64(6000000),
+		CanCreateContract: _canCreateContract,
 	}
 	var code = []byte{
 		byte(vm.PUSH1), 0x0, byte(vm.DUP1), byte(vm.DUP1), byte(vm.DUP1), // in and outs zero

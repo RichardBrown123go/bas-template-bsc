@@ -20,9 +20,11 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/systemcontract"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
 // ChainContext supports retrieving headers and consensus parameters from the
@@ -113,7 +115,37 @@ func Transfer(db vm.StateDB, sender, recipient common.Address, amount *big.Int) 
 
 // CanCreateContract returns whether caller can create contract or not
 func CanCreateContract(db vm.StateDB, caller common.Address) bool {
-	// TODO: could we reuse the system contract snapshot for less query.
-	// getting the caller valid or not in system contract.
-	return true
+	existsHash, bannedHash := calCallerSlotHashes(caller)
+
+	return db.GetState(systemcontract.DeployerProxyContractAddress, existsHash) == _trueHash &&
+		db.GetState(systemcontract.DeployerProxyContractAddress, bannedHash) == _trueHash
+}
+
+var (
+	_trueHash                 = common.HexToHash("0x0000000000000000000000000000000000000001")
+	_contractDeployerSlotHash = common.HexToHash("0x000000000000000000000000000000000000000d")
+)
+
+// calCallerSlotHash returns the storage hash of a deploer
+//
+// Genesis contract commit SHA: f1be5672e6a2b94bc8414eb598564456e047f75d.
+// The mapping slot is 13, the Deployer struct consumes 3 words.
+//     struct Deployer {
+//         bool exists; // 0
+//         address account; // 1
+//         bool banned; // 2
+//     }
+//     mapping(address => Deployer) private _contractDeployers;
+//
+// Those constants are hardcoded, so the contract commit SHA must be specified.
+func calCallerSlotHashes(caller common.Address) (existsHash common.Hash, bannedHash common.Hash) {
+	// TODO: the deployer mapping must be public for storage reading.
+	baseHashBytes := crypto.Keccak256(append(crypto.Keccak256(caller[:]), _contractDeployerSlotHash.Bytes()...))
+	existsHash = common.BytesToHash(baseHashBytes)
+
+	bannedHashInt := new(big.Int).SetBytes(baseHashBytes)
+	bannedHashInt = bannedHashInt.Add(bannedHashInt, big.NewInt(2))
+	bannedHash = common.BytesToHash(bannedHashInt.Bytes())
+
+	return
 }
